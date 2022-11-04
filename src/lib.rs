@@ -60,7 +60,8 @@ impl Default for TxFilter {
 /// needed to use lightning with LDK.  Note: The bdk::Blockchain you use
 /// must implement the IndexedChain trait.
 pub struct LightningWallet<B, D> {
-    inner: Mutex<Wallet<B, D>>,
+    client: Mutex<Box<B>>,
+    inner: Mutex<Wallet<D>>,
     filter: Mutex<TxFilter>,
 }
 
@@ -70,8 +71,9 @@ where
     D: BatchDatabase,
 {
     /// create a new lightning wallet from your bdk wallet
-    pub fn new(wallet: Wallet<B, D>) -> Self {
+    pub fn new(client: Box<B>, wallet: Wallet<D>) -> Self {
         LightningWallet {
+            client: Mutex::new(client),
             inner: Mutex::new(wallet),
             filter: Mutex::new(TxFilter::new()),
         }
@@ -163,7 +165,7 @@ where
     /// on the inner wallet until the guard is dropped
     /// this is useful if you need methods on the wallet that
     /// are not yet exposed on LightningWallet
-    pub fn get_wallet(&self) -> MutexGuard<Wallet<B, D>> {
+    pub fn get_wallet(&self) -> MutexGuard<Wallet<D>> {
         self.inner.lock().unwrap()
     }
 
@@ -316,16 +318,6 @@ where
             .get_header(height)
             .map(|header| (height, header, tx_list))
             .map_err(Error::Bdk)
-    }
-}
-
-impl<B, D> From<Wallet<B, D>> for LightningWallet<B, D>
-where
-    B: Blockchain + IndexedChain,
-    D: BatchDatabase,
-{
-    fn from(wallet: Wallet<B, D>) -> Self {
-        Self::new(wallet)
     }
 }
 
