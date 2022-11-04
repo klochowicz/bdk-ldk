@@ -15,4 +15,4 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 lightning = { version = "0.0.104", features = ["max_level_trace"] }
-bdk = { git = "https://github.com/johncantrell97/bdk" }
+bdk = { git = "https://github.com/klochowicz/bdk", branch="bdk-ldk-fork" }
