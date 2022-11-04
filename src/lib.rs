@@ -1,8 +1,8 @@
 use bdk::bitcoin::{Address, BlockHeader, Script, Transaction, Txid};
-use bdk::blockchain::{noop_progress, Blockchain, IndexedChain, TxStatus};
+use bdk::blockchain::{Blockchain, IndexedChain, TxStatus};
 use bdk::database::BatchDatabase;
 use bdk::wallet::{AddressIndex, Wallet};
-use bdk::SignOptions;
+use bdk::{Balance, SignOptions, SyncOptions};
 
 use lightning::chain::chaininterface::BroadcasterInterface;
 use lightning::chain::chaininterface::{ConfirmationTarget, FeeEstimator};
@@ -54,13 +54,15 @@ impl Default for TxFilter {
     }
 }
 
+trait IndexedBlockchain: Blockchain + IndexedChain {}
+
 /// Lightning Wallet
 ///
 /// A wrapper around a bdk::Wallet to fulfill many of the requirements
 /// needed to use lightning with LDK.  Note: The bdk::Blockchain you use
 /// must implement the IndexedChain trait.
-pub struct LightningWallet<B, D> {
-    client: Mutex<Box<B>>,
+pub struct LightningWallet<D> {
+    client: Mutex<Box<dyn IndexedBlockchain>>,
     wallet: Mutex<Wallet<D>>,
     filter: Mutex<TxFilter>,
 }
@@ -137,10 +139,11 @@ where
         value: u64,
         target_blocks: usize,
     ) -> Result<Transaction, Error> {
-        let wallet = self.wallet.lock().unwrap();
+        let client = self.client.lock().unwrap();
 
+        let wallet = self.client.lock().unwrap();
         let mut tx_builder = wallet.build_tx();
-        let fee_rate = wallet.client().estimate_fee(target_blocks)?;
+        let fee_rate = client.estimate_fee(target_blocks)?;
 
         tx_builder
             .add_recipient(output_script.clone(), value)
@@ -155,7 +158,7 @@ where
     }
 
     /// get the balance of the inner onchain bdk wallet
-    pub fn get_balance(&self) -> Result<u64, Error> {
+    pub fn get_balance(&self) -> Result<Balance, Error> {
         let wallet = self.wallet.lock().unwrap();
         wallet.get_balance().map_err(Error::Bdk)
     }
@@ -171,7 +174,8 @@ where
 
     fn sync_onchain_wallet(&self) -> Result<(), Error> {
         let wallet = self.wallet.lock().unwrap();
-        wallet.sync(noop_progress(), None)?;
+        let client = self.client.lock().unwrap();
+        wallet.sync(&client, SyncOptions::default())?;
         Ok(())
     }
 
@@ -365,11 +369,10 @@ where
         filter.register_tx(*txid, script_pubkey.clone());
     }
 
-    fn register_output(&self, output: WatchedOutput) -> Option<TransactionWithPosition> {
+    fn register_output(&self, output: WatchedOutput) {
         let mut filter = self.filter.lock().unwrap();
         filter.register_output(output);
         // TODO: do we need to check for tx here or wait for next sync?
-        None
     }
 }
 
