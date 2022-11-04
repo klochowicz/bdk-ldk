@@ -1,5 +1,5 @@
 use bdk::bitcoin::{Address, BlockHeader, Script, Transaction, Txid};
-use bdk::blockchain::{Blockchain, IndexedChain, TxStatus};
+use bdk::blockchain::{Blockchain, GetHeight, IndexedChain, TxStatus, WalletSync};
 use bdk::database::BatchDatabase;
 use bdk::wallet::{AddressIndex, Wallet};
 use bdk::{Balance, SignOptions, SyncOptions};
@@ -54,22 +54,22 @@ impl Default for TxFilter {
     }
 }
 
-trait IndexedBlockchain: Blockchain + IndexedChain {}
+trait IndexedBlockchain: Blockchain + IndexedChain + WalletSync + GetHeight {}
 
 /// Lightning Wallet
 ///
 /// A wrapper around a bdk::Wallet to fulfill many of the requirements
 /// needed to use lightning with LDK.  Note: The bdk::Blockchain you use
 /// must implement the IndexedChain trait.
-pub struct LightningWallet<D> {
-    client: Mutex<Box<dyn IndexedBlockchain>>,
+pub struct LightningWallet<B, D> {
+    client: Mutex<Box<B>>,
     wallet: Mutex<Wallet<D>>,
     filter: Mutex<TxFilter>,
 }
 
 impl<B, D> LightningWallet<B, D>
 where
-    B: Blockchain + IndexedChain,
+    B: IndexedBlockchain,
     D: BatchDatabase,
 {
     /// create a new lightning wallet from your bdk wallet
@@ -175,7 +175,7 @@ where
     fn sync_onchain_wallet(&self) -> Result<(), Error> {
         let wallet = self.wallet.lock().unwrap();
         let client = self.client.lock().unwrap();
-        wallet.sync(&client, SyncOptions::default())?;
+        wallet.sync(client.as_ref(), SyncOptions::default())?;
         Ok(())
     }
 
@@ -237,16 +237,15 @@ where
 
     /// get a tuple containing the current tip height and header
     pub fn get_tip(&self) -> Result<(u32, BlockHeader), Error> {
-        let wallet = self.wallet.lock().unwrap();
-        let tip_height = wallet.client().get_height()?;
-        let tip_header = wallet.client().get_header(tip_height)?;
+        let client = self.client.lock().unwrap();
+        let tip_height = client.get_height()?;
+        let tip_header = client.get_header(tip_height)?;
         Ok((tip_height, tip_header))
     }
 
     fn augment_txid_with_confirmation_status(&self, txid: Txid) -> Result<(Txid, bool), Error> {
-        let wallet = self.wallet.lock().unwrap();
-        wallet
-            .client()
+        let client = self.client.lock().unwrap();
+        client
             .get_tx_status(&txid)
             .map(|status| match status {
                 Some(status) => (txid, status.confirmed),
@@ -260,9 +259,8 @@ where
         txid: &Txid,
         script: &Script,
     ) -> Result<Option<TransactionWithHeight>, Error> {
-        let wallet = self.wallet.lock().unwrap();
-        wallet
-            .client()
+        let client = self.client.lock().unwrap();
+        client
             .get_script_tx_history(script)
             .map(|history| {
                 history
@@ -288,10 +286,9 @@ where
         &self,
         output: &WatchedOutput,
     ) -> Result<Vec<TransactionWithHeight>, Error> {
-        let wallet = self.wallet.lock().unwrap();
+        let client = self.client.lock().unwrap();
 
-        wallet
-            .client()
+        client
             .get_script_tx_history(&output.script_pubkey)
             .map(|history| self.get_confirmed_txs_from_script_history(history))
             .map_err(Error::Bdk)
@@ -302,10 +299,9 @@ where
         height: u32,
         tx: Transaction,
     ) -> Result<Option<TransactionWithHeightAndPosition>, Error> {
-        let wallet = self.wallet.lock().unwrap();
+        let client = self.client.lock().unwrap();
 
-        wallet
-            .client()
+        client
             .get_position_in_block(&tx.txid(), height as usize)
             .map(|position| position.map(|pos| (height, tx, pos)))
             .map_err(Error::Bdk)
@@ -316,9 +312,8 @@ where
         height: u32,
         tx_list: Vec<TransactionWithPosition>,
     ) -> Result<(u32, BlockHeader, Vec<TransactionWithPosition>), Error> {
-        let wallet = self.wallet.lock().unwrap();
-        wallet
-            .client()
+        let client = self.client.lock().unwrap();
+        client
             .get_header(height)
             .map(|header| (height, header, tx_list))
             .map_err(Error::Bdk)
@@ -331,7 +326,7 @@ where
     D: BatchDatabase,
 {
     fn get_est_sat_per_1000_weight(&self, confirmation_target: ConfirmationTarget) -> u32 {
-        let wallet = self.wallet.lock().unwrap();
+        let client = self.client.lock().unwrap();
 
         let target_blocks = match confirmation_target {
             ConfirmationTarget::Background => 6,
@@ -339,11 +334,8 @@ where
             ConfirmationTarget::HighPriority => 1,
         };
 
-        let estimate = wallet
-            .client()
-            .estimate_fee(target_blocks)
-            .unwrap_or_default();
-        let sats_per_vbyte = estimate.as_sat_vb() as u32;
+        let estimate = client.estimate_fee(target_blocks).unwrap_or_default();
+        let sats_per_vbyte = estimate.as_sat_per_vb() as u32;
         sats_per_vbyte * 253
     }
 }
@@ -354,8 +346,8 @@ where
     D: BatchDatabase,
 {
     fn broadcast_transaction(&self, tx: &Transaction) {
-        let wallet = self.wallet.lock().unwrap();
-        let _result = wallet.client().broadcast(tx);
+        let client = self.client.lock().unwrap();
+        let _result = client.broadcast(tx);
     }
 }
 
