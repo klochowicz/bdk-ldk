@@ -61,7 +61,7 @@ impl Default for TxFilter {
 /// must implement the IndexedChain trait.
 pub struct LightningWallet<B, D> {
     client: Mutex<Box<B>>,
-    inner: Mutex<Wallet<D>>,
+    wallet: Mutex<Wallet<D>>,
     filter: Mutex<TxFilter>,
 }
 
@@ -74,7 +74,7 @@ where
     pub fn new(client: Box<B>, wallet: Wallet<D>) -> Self {
         LightningWallet {
             client: Mutex::new(client),
-            inner: Mutex::new(wallet),
+            wallet: Mutex::new(wallet),
             filter: Mutex::new(TxFilter::new()),
         }
     }
@@ -124,7 +124,7 @@ where
     /// this is useful when you need to sweep funds from a channel
     /// back into your onchain wallet.
     pub fn get_unused_address(&self) -> Result<Address, Error> {
-        let wallet = self.inner.lock().unwrap();
+        let wallet = self.wallet.lock().unwrap();
         let address_info = wallet.get_address(AddressIndex::LastUnused)?;
         Ok(address_info.address)
     }
@@ -137,7 +137,7 @@ where
         value: u64,
         target_blocks: usize,
     ) -> Result<Transaction, Error> {
-        let wallet = self.inner.lock().unwrap();
+        let wallet = self.wallet.lock().unwrap();
 
         let mut tx_builder = wallet.build_tx();
         let fee_rate = wallet.client().estimate_fee(target_blocks)?;
@@ -156,7 +156,7 @@ where
 
     /// get the balance of the inner onchain bdk wallet
     pub fn get_balance(&self) -> Result<u64, Error> {
-        let wallet = self.inner.lock().unwrap();
+        let wallet = self.wallet.lock().unwrap();
         wallet.get_balance().map_err(Error::Bdk)
     }
 
@@ -166,11 +166,11 @@ where
     /// this is useful if you need methods on the wallet that
     /// are not yet exposed on LightningWallet
     pub fn get_wallet(&self) -> MutexGuard<Wallet<D>> {
-        self.inner.lock().unwrap()
+        self.wallet.lock().unwrap()
     }
 
     fn sync_onchain_wallet(&self) -> Result<(), Error> {
-        let wallet = self.inner.lock().unwrap();
+        let wallet = self.wallet.lock().unwrap();
         wallet.sync(noop_progress(), None)?;
         Ok(())
     }
@@ -233,14 +233,14 @@ where
 
     /// get a tuple containing the current tip height and header
     pub fn get_tip(&self) -> Result<(u32, BlockHeader), Error> {
-        let wallet = self.inner.lock().unwrap();
+        let wallet = self.wallet.lock().unwrap();
         let tip_height = wallet.client().get_height()?;
         let tip_header = wallet.client().get_header(tip_height)?;
         Ok((tip_height, tip_header))
     }
 
     fn augment_txid_with_confirmation_status(&self, txid: Txid) -> Result<(Txid, bool), Error> {
-        let wallet = self.inner.lock().unwrap();
+        let wallet = self.wallet.lock().unwrap();
         wallet
             .client()
             .get_tx_status(&txid)
@@ -256,7 +256,7 @@ where
         txid: &Txid,
         script: &Script,
     ) -> Result<Option<TransactionWithHeight>, Error> {
-        let wallet = self.inner.lock().unwrap();
+        let wallet = self.wallet.lock().unwrap();
         wallet
             .client()
             .get_script_tx_history(script)
@@ -284,7 +284,7 @@ where
         &self,
         output: &WatchedOutput,
     ) -> Result<Vec<TransactionWithHeight>, Error> {
-        let wallet = self.inner.lock().unwrap();
+        let wallet = self.wallet.lock().unwrap();
 
         wallet
             .client()
@@ -298,7 +298,7 @@ where
         height: u32,
         tx: Transaction,
     ) -> Result<Option<TransactionWithHeightAndPosition>, Error> {
-        let wallet = self.inner.lock().unwrap();
+        let wallet = self.wallet.lock().unwrap();
 
         wallet
             .client()
@@ -312,7 +312,7 @@ where
         height: u32,
         tx_list: Vec<TransactionWithPosition>,
     ) -> Result<(u32, BlockHeader, Vec<TransactionWithPosition>), Error> {
-        let wallet = self.inner.lock().unwrap();
+        let wallet = self.wallet.lock().unwrap();
         wallet
             .client()
             .get_header(height)
@@ -327,7 +327,7 @@ where
     D: BatchDatabase,
 {
     fn get_est_sat_per_1000_weight(&self, confirmation_target: ConfirmationTarget) -> u32 {
-        let wallet = self.inner.lock().unwrap();
+        let wallet = self.wallet.lock().unwrap();
 
         let target_blocks = match confirmation_target {
             ConfirmationTarget::Background => 6,
@@ -350,7 +350,7 @@ where
     D: BatchDatabase,
 {
     fn broadcast_transaction(&self, tx: &Transaction) {
-        let wallet = self.inner.lock().unwrap();
+        let wallet = self.wallet.lock().unwrap();
         let _result = wallet.client().broadcast(tx);
     }
 }
