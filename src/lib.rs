@@ -54,7 +54,7 @@ impl Default for TxFilter {
     }
 }
 
-trait IndexedBlockchain: Blockchain + IndexedChain + WalletSync + GetHeight {}
+pub trait IndexedBlockchain: Blockchain + IndexedChain + WalletSync + GetHeight {}
 
 /// Lightning Wallet
 ///
@@ -140,8 +140,7 @@ where
         target_blocks: usize,
     ) -> Result<Transaction, Error> {
         let client = self.client.lock().unwrap();
-
-        let wallet = self.client.lock().unwrap();
+        let wallet = self.wallet.lock().unwrap();
         let mut tx_builder = wallet.build_tx();
         let fee_rate = client.estimate_fee(target_blocks)?;
 
