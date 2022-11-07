@@ -1,9 +1,10 @@
 use bdk::bitcoin::{Address, BlockHeader, Script, Transaction, Txid};
-use bdk::blockchain::{Blockchain, GetHeight, IndexedChain, TxStatus, WalletSync};
+use bdk::blockchain::{Blockchain, GetHeight, WalletSync};
 use bdk::database::BatchDatabase;
 use bdk::wallet::{AddressIndex, Wallet};
 use bdk::{Balance, SignOptions, SyncOptions};
 
+pub use indexed_chain::{IndexedChain, TxStatus};
 use lightning::chain::chaininterface::BroadcasterInterface;
 use lightning::chain::chaininterface::{ConfirmationTarget, FeeEstimator};
 use lightning::chain::WatchedOutput;
@@ -14,6 +15,8 @@ use std::sync::{Mutex, MutexGuard};
 pub type TransactionWithHeight = (u32, Transaction);
 pub type TransactionWithPosition = (usize, Transaction);
 pub type TransactionWithHeightAndPosition = (u32, Transaction, usize);
+
+mod indexed_chain;
 
 #[derive(Debug)]
 pub enum Error {
@@ -54,8 +57,6 @@ impl Default for TxFilter {
     }
 }
 
-pub trait IndexedBlockchain: Blockchain + IndexedChain + WalletSync + GetHeight {}
-
 /// Lightning Wallet
 ///
 /// A wrapper around a bdk::Wallet to fulfill many of the requirements
@@ -69,7 +70,7 @@ pub struct LightningWallet<B, D> {
 
 impl<B, D> LightningWallet<B, D>
 where
-    B: IndexedBlockchain,
+    B: Blockchain + GetHeight + WalletSync + IndexedChain,
     D: BatchDatabase,
 {
     /// create a new lightning wallet from your bdk wallet
@@ -321,7 +322,7 @@ where
 
 impl<B, D> FeeEstimator for LightningWallet<B, D>
 where
-    B: Blockchain + IndexedChain,
+    B: Blockchain + GetHeight + WalletSync + IndexedChain,
     D: BatchDatabase,
 {
     fn get_est_sat_per_1000_weight(&self, confirmation_target: ConfirmationTarget) -> u32 {
@@ -341,7 +342,7 @@ where
 
 impl<B, D> BroadcasterInterface for LightningWallet<B, D>
 where
-    B: Blockchain + IndexedChain,
+    B: Blockchain + GetHeight + WalletSync + IndexedChain,
     D: BatchDatabase,
 {
     fn broadcast_transaction(&self, tx: &Transaction) {
@@ -352,7 +353,7 @@ where
 
 impl<B, D> Filter for LightningWallet<B, D>
 where
-    B: Blockchain + IndexedChain,
+    B: Blockchain + GetHeight + WalletSync + IndexedChain,
     D: BatchDatabase,
 {
     fn register_tx(&self, txid: &Txid, script_pubkey: &Script) {
