@@ -322,7 +322,7 @@ where
 
 impl<B, D> FeeEstimator for LightningWallet<B, D>
 where
-    B: Blockchain + GetHeight + WalletSync + IndexedChain,
+    B: Blockchain,
     D: BatchDatabase,
 {
     fn get_est_sat_per_1000_weight(&self, confirmation_target: ConfirmationTarget) -> u32 {
@@ -342,7 +342,7 @@ where
 
 impl<B, D> BroadcasterInterface for LightningWallet<B, D>
 where
-    B: Blockchain + GetHeight + WalletSync + IndexedChain,
+    B: Blockchain,
     D: BatchDatabase,
 {
     fn broadcast_transaction(&self, tx: &Transaction) {
@@ -353,7 +353,7 @@ where
 
 impl<B, D> Filter for LightningWallet<B, D>
 where
-    B: Blockchain + GetHeight + WalletSync + IndexedChain,
+    B: Blockchain,
     D: BatchDatabase,
 {
     fn register_tx(&self, txid: &Txid, script_pubkey: &Script) {
